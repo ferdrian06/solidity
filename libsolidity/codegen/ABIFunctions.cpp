@@ -31,8 +31,13 @@
 #include <boost/range/adaptor/reversed.hpp>
 
 using namespace std;
-using namespace dev;
-using namespace dev::solidity;
+using namespace solidity;
+using namespace solidity::frontend;
+
+using solidity::util::Whiskers;
+using solidity::util::toCompactHexWithPrefix;
+using solidity::util::suffixedVariableNameList;
+using solidity::util::formatAsStringOrNumber;
 
 string ABIFunctions::tupleEncoder(
 	TypePointers const& _givenTypes,
@@ -56,7 +61,7 @@ string ABIFunctions::tupleEncoder(
 
 	return createExternallyUsedFunction(functionName, [&]() {
 		// Note that the values are in reverse due to the difference in calling semantics.
-		Whiskers templ(R"(
+			util::Whiskers templ(R"(
 			function <functionName>(headStart <valueParams>) -> tail {
 				tail := add(headStart, <headSize>)
 				<encodeElements>
@@ -74,7 +79,7 @@ string ABIFunctions::tupleEncoder(
 			solAssert(_targetTypes[i], "");
 			size_t sizeOnStack = _givenTypes[i]->sizeOnStack();
 			bool dynamic = _targetTypes[i]->isDynamicallyEncoded();
-			Whiskers elementTempl(
+			util::Whiskers elementTempl(
 				dynamic ?
 				string(R"(
 					mstore(add(headStart, <pos>), sub(tail, headStart))
@@ -84,7 +89,7 @@ string ABIFunctions::tupleEncoder(
 					<abiEncode>(<values> add(headStart, <pos>))
 				)")
 			);
-			string values = suffixedVariableNameList("value", stackPos, stackPos + sizeOnStack);
+			string values = util::suffixedVariableNameList("value", stackPos, stackPos + sizeOnStack);
 			elementTempl("values", values.empty() ? "" : values + ", ");
 			elementTempl("pos", to_string(headPos));
 			elementTempl("abiEncode", abiEncodingFunction(*_givenTypes[i], *_targetTypes[i], options));
@@ -93,7 +98,7 @@ string ABIFunctions::tupleEncoder(
 			stackPos += sizeOnStack;
 		}
 		solAssert(headPos == headSize_, "");
-		string valueParams = suffixedVariableNameList("value", stackPos, 0);
+		string valueParams = util::suffixedVariableNameList("value", stackPos, 0);
 		templ("valueParams", valueParams.empty() ? "" : ", " + valueParams);
 		templ("encodeElements", encodeElements);
 
@@ -124,7 +129,7 @@ string ABIFunctions::tupleEncoderPacked(
 		solAssert(!_givenTypes.empty(), "");
 
 		// Note that the values are in reverse due to the difference in calling semantics.
-		Whiskers templ(R"(
+		util::Whiskers templ(R"(
 			function <functionName>(pos <valueParams>) -> end {
 				<encodeElements>
 				end := pos
@@ -139,7 +144,7 @@ string ABIFunctions::tupleEncoderPacked(
 			solAssert(_targetTypes[i], "");
 			size_t sizeOnStack = _givenTypes[i]->sizeOnStack();
 			bool dynamic = _targetTypes[i]->isDynamicallyEncoded();
-			Whiskers elementTempl(
+			util::Whiskers elementTempl(
 				dynamic ?
 				string(R"(
 					pos := <abiEncode>(<values> pos)
@@ -149,7 +154,7 @@ string ABIFunctions::tupleEncoderPacked(
 					pos := add(pos, <calldataEncodedSize>)
 				)")
 			);
-			string values = suffixedVariableNameList("value", stackPos, stackPos + sizeOnStack);
+			string values = util::suffixedVariableNameList("value", stackPos, stackPos + sizeOnStack);
 			elementTempl("values", values.empty() ? "" : values + ", ");
 			if (!dynamic)
 				elementTempl("calldataEncodedSize", to_string(_targetTypes[i]->calldataEncodedSize(false)));
@@ -157,7 +162,7 @@ string ABIFunctions::tupleEncoderPacked(
 			encodeElements += elementTempl.render();
 			stackPos += sizeOnStack;
 		}
-		string valueParams = suffixedVariableNameList("value", stackPos, 0);
+		string valueParams = util::suffixedVariableNameList("value", stackPos, 0);
 		templ("valueParams", valueParams.empty() ? "" : ", " + valueParams);
 		templ("encodeElements", encodeElements);
 
@@ -177,7 +182,7 @@ string ABIFunctions::tupleDecoder(TypePointers const& _types, bool _fromMemory)
 		for (auto const& t: _types)
 			decodingTypes.emplace_back(t->decodingType());
 
-		Whiskers templ(R"(
+		util::Whiskers templ(R"(
 			function <functionName>(headStart, dataEnd) <arrow> <valueReturnParams> {
 				if slt(sub(dataEnd, headStart), <minimumSize>) { revert(0, 0) }
 				<decodeElements>
@@ -205,7 +210,7 @@ string ABIFunctions::tupleDecoder(TypePointers const& _types, bool _fromMemory)
 				stackPos++;
 			}
 			bool dynamic = decodingTypes[i]->isDynamicallyEncoded();
-			Whiskers elementTempl(
+			util::Whiskers elementTempl(
 				dynamic ?
 				R"(
 				{
@@ -325,7 +330,7 @@ string ABIFunctions::abiEncodingFunction(
 	return createFunction(functionName, [&]() {
 		solAssert(!to.isDynamicallyEncoded(), "");
 
-		Whiskers templ(R"(
+		util::Whiskers templ(R"(
 			function <functionName>(value, pos) {
 				mstore(pos, <cleanupConvert>)
 			}
@@ -369,10 +374,10 @@ string ABIFunctions::abiEncodeAndReturnUpdatedPosFunction(
 		_targetType.identifier() +
 		_options.toFunctionNameSuffix();
 	return createFunction(functionName, [&]() {
-		string values = suffixedVariableNameList("value", 0, numVariablesForType(_givenType, _options));
+		string values = util::suffixedVariableNameList("value", 0, numVariablesForType(_givenType, _options));
 		string encoder = abiEncodingFunction(_givenType, _targetType, _options);
 		if (_targetType.isDynamicallyEncoded())
-			return Whiskers(R"(
+			return util::Whiskers(R"(
 				function <functionName>(<values>, pos) -> updatedPos {
 					updatedPos := <encode>(<values>, pos)
 				}
@@ -385,7 +390,7 @@ string ABIFunctions::abiEncodeAndReturnUpdatedPosFunction(
 		{
 			unsigned encodedSize = _targetType.calldataEncodedSize(_options.padded);
 			solAssert(encodedSize != 0, "Invalid encoded size.");
-			return Whiskers(R"(
+			return util::Whiskers(R"(
 				function <functionName>(<values>, pos) -> updatedPos {
 					<encode>(<values>, pos)
 					updatedPos := add(pos, <encodedSize>)
@@ -393,7 +398,7 @@ string ABIFunctions::abiEncodeAndReturnUpdatedPosFunction(
 			)")
 			("functionName", functionName)
 			("encode", encoder)
-			("encodedSize", toCompactHexWithPrefix(encodedSize))
+			("encodedSize", util::toCompactHexWithPrefix(encodedSize))
 			("values", values)
 			.render();
 		}
@@ -436,7 +441,7 @@ string ABIFunctions::abiEncodingFunctionCalldataArrayWithoutCleanup(
 		bool needsPadding = _options.padded && fromArrayType.isByteArray();
 		if (fromArrayType.isDynamicallySized())
 		{
-			Whiskers templ(R"(
+			util::Whiskers templ(R"(
 				// <readableTypeNameFrom> -> <readableTypeNameTo>
 				function <functionName>(start, length, pos) -> end {
 					pos := <storeLength>(pos, length)
@@ -451,12 +456,12 @@ string ABIFunctions::abiEncodingFunctionCalldataArrayWithoutCleanup(
 				templ("scaleLengthByStride", "");
 			else
 				templ("scaleLengthByStride",
-					Whiskers(R"(
+					util::Whiskers(R"(
 						if gt(length, <maxLength>) { revert(0, 0) }
 						length := mul(length, <stride>)
 					)")
-					("stride", toCompactHexWithPrefix(fromArrayType.calldataStride()))
-					("maxLength", toCompactHexWithPrefix(u256(-1) / fromArrayType.calldataStride()))
+					("stride", util::toCompactHexWithPrefix(fromArrayType.calldataStride()))
+					("maxLength", util::toCompactHexWithPrefix(u256(-1) / fromArrayType.calldataStride()))
 					.render()
 				);
 			templ("readableTypeNameFrom", _from.toString(true));
@@ -468,7 +473,7 @@ string ABIFunctions::abiEncodingFunctionCalldataArrayWithoutCleanup(
 		else
 		{
 			solAssert(fromArrayType.calldataStride() == 32, "");
-			Whiskers templ(R"(
+			util::Whiskers templ(R"(
 				// <readableTypeNameFrom> -> <readableTypeNameTo>
 				function <functionName>(start, pos) {
 					<copyFun>(start, pos, <byteLength>)
@@ -478,7 +483,7 @@ string ABIFunctions::abiEncodingFunctionCalldataArrayWithoutCleanup(
 			templ("readableTypeNameFrom", _from.toString(true));
 			templ("readableTypeNameTo", _to.toString(true));
 			templ("copyFun", m_utils.copyToMemoryFunction(true));
-			templ("byteLength", toCompactHexWithPrefix(fromArrayType.length() * fromArrayType.calldataStride()));
+			templ("byteLength", util::toCompactHexWithPrefix(fromArrayType.length() * fromArrayType.calldataStride()));
 			return templ.render();
 		}
 	});
@@ -510,8 +515,8 @@ string ABIFunctions::abiEncodingFunctionSimpleArray(
 		EncodingOptions subOptions(_options);
 		subOptions.encodeFunctionFromStack = false;
 		subOptions.padded = true;
-		string elementValues = suffixedVariableNameList("elementValue", 0, numVariablesForType(*_from.baseType(), subOptions));
-		Whiskers templ(
+		string elementValues = util::suffixedVariableNameList("elementValue", 0, numVariablesForType(*_from.baseType(), subOptions));
+		util::Whiskers templ(
 			usesTail ?
 			R"(
 				// <readableTypeNameFrom> -> <readableTypeNameTo>
@@ -614,7 +619,7 @@ string ABIFunctions::abiEncodingFunctionMemoryByteArray(
 
 	return createFunction(functionName, [&]() {
 		solAssert(_to.isByteArray(), "");
-		Whiskers templ(R"(
+		util::Whiskers templ(R"(
 			function <functionName>(value, pos) -> end {
 				let length := <lengthFun>(value)
 				pos := <storeLength>(pos, length)
@@ -652,7 +657,7 @@ string ABIFunctions::abiEncodingFunctionCompactStorageArray(
 		if (_from.isByteArray())
 		{
 			solAssert(_to.isByteArray(), "");
-			Whiskers templ(R"(
+			util::Whiskers templ(R"(
 				// <readableTypeNameFrom> -> <readableTypeNameTo>
 				function <functionName>(value, pos) -> ret {
 					let slotValue := sload(value)
@@ -700,7 +705,7 @@ string ABIFunctions::abiEncodingFunctionCompactStorageArray(
 			solAssert(itemsPerSlot > 0, "");
 			// The number of elements we need to handle manually after the loop.
 			size_t spill = size_t(_from.length() % itemsPerSlot);
-			Whiskers templ(
+			util::Whiskers templ(
 				R"(
 					// <readableTypeNameFrom> -> <readableTypeNameTo>
 					function <functionName>(value, pos) <return> {
@@ -755,7 +760,7 @@ string ABIFunctions::abiEncodingFunctionCompactStorageArray(
 			else
 				templ("useSpill", "0");
 			templ("itemsPerSlot", to_string(itemsPerSlot));
-			templ("stride", toCompactHexWithPrefix(_to.calldataStride()));
+			templ("stride", util::toCompactHexWithPrefix(_to.calldataStride()));
 
 			EncodingOptions subOptions(_options);
 			subOptions.encodeFunctionFromStack = false;
@@ -800,7 +805,7 @@ string ABIFunctions::abiEncodingFunctionStruct(
 
 	return createFunction(functionName, [&]() {
 		bool dynamic = _to.isDynamicallyEncoded();
-		Whiskers templ(R"(
+		util::Whiskers templ(R"(
 			// <readableTypeNameFrom> -> <readableTypeNameTo>
 			function <functionName>(value, pos) <return> {
 				let tail := add(pos, <headSize>)

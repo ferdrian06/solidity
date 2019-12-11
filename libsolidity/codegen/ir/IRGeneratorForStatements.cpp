@@ -41,8 +41,9 @@
 #include <libdevcore/Keccak256.h>
 
 using namespace std;
-using namespace dev;
-using namespace dev::solidity;
+using namespace solidity;
+using namespace solidity::util;
+using namespace solidity::frontend;
 
 namespace
 {
@@ -313,7 +314,7 @@ void IRGeneratorForStatements::endVisit(UnaryOperation const& _unaryOperation)
 	else if (resultType.category() == Type::Category::RationalNumber)
 	{
 		defineExpression(_unaryOperation) <<
-			formatNumber(resultType.literalValue(nullptr)) <<
+			util::formatNumber(resultType.literalValue(nullptr)) <<
 			"\n";
 	}
 	else if (resultType.category() == Type::Category::Integer)
@@ -395,7 +396,7 @@ bool IRGeneratorForStatements::visit(BinaryOperation const& _binOp)
 
 	if (commonType->category() == Type::Category::RationalNumber)
 		defineExpression(_binOp) <<
-			toCompactHexWithPrefix(commonType->literalValue(nullptr)) <<
+			util::toCompactHexWithPrefix(commonType->literalValue(nullptr)) <<
 			"\n";
 	else if (TokenTraits::isCompareOp(op))
 	{
@@ -507,7 +508,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 				defineExpression(_functionCall) <<
 					m_context.virtualFunctionName(*functionDef) <<
 					"(" <<
-					joinHumanReadable(args) <<
+					util::joinHumanReadable(args) <<
 					")\n";
 				return;
 			}
@@ -517,7 +518,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 		defineExpression(_functionCall) <<
 			m_context.internalDispatch(functionType->parameterTypes().size(), functionType->returnParameterTypes().size()) <<
 			"(" <<
-			joinHumanReadable(args) <<
+			util::joinHumanReadable(args) <<
 			")\n";
 		break;
 	}
@@ -543,7 +544,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 		if (!event.isAnonymous())
 		{
 			indexedArgs.emplace_back(m_context.newYulVariable());
-			string signature = formatNumber(u256(h256::Arith(dev::keccak256(functionType->externalSignature()))));
+			string signature = formatNumber(u256(h256::Arith(util::keccak256(functionType->externalSignature()))));
 			m_code << "let " << indexedArgs.back() << " := " << signature << "\n";
 		}
 		for (size_t i = 0; i < event.parameters().size(); ++i)
@@ -1220,11 +1221,11 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 	{
 		// send all gas except the amount needed to execute "SUB" and "CALL"
 		// @todo this retains too much gas for now, needs to be fine-tuned.
-		u256 gasNeededByCaller = eth::GasCosts::callGas(m_context.evmVersion()) + 10;
+		u256 gasNeededByCaller = evmasm::GasCosts::callGas(m_context.evmVersion()) + 10;
 		if (funType.valueSet())
-			gasNeededByCaller += eth::GasCosts::callValueTransferGas;
+			gasNeededByCaller += evmasm::GasCosts::callValueTransferGas;
 		if (!checkExistence)
-			gasNeededByCaller += eth::GasCosts::callNewAccountGas; // we never know
+			gasNeededByCaller += evmasm::GasCosts::callNewAccountGas; // we never know
 		templ("gas", "sub(gas(), " + formatNumber(gasNeededByCaller) + ")");
 	}
 	// Order is important here, STATICCALL might overlap with DELEGATECALL.
