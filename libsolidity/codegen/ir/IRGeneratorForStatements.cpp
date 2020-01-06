@@ -35,10 +35,10 @@
 #include <libyul/Dialect.h>
 #include <libyul/optimiser/ASTCopier.h>
 
-#include <libdevcore/Whiskers.h>
-#include <libdevcore/StringUtils.h>
-#include <libdevcore/Whiskers.h>
-#include <libdevcore/Keccak256.h>
+#include <libsolutil/Whiskers.h>
+#include <libsolutil/StringUtils.h>
+#include <libsolutil/Whiskers.h>
+#include <libsolutil/Keccak256.h>
 
 using namespace std;
 using namespace solidity;
